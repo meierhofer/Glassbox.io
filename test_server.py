@@ -23,6 +23,7 @@ from pylsl import StreamInlet, resolve_stream
 from threading import Thread
 from tornado import gen
 from functools import partial
+import numpy as np
 
 
 
@@ -40,7 +41,7 @@ inlet = StreamInlet(streams[0])
 num_channels = inlet.channel_count
 
 update_intervall = 0.5 #seconds
-sampling_frequency = inlet.info().nominal_srate()
+fs = inlet.info().nominal_srate()
 #print(update_intervall, sampling_frequency)
 
 #print("number of channels:", num_channels)
@@ -106,7 +107,7 @@ for index in reversed(range(num_channels)):
 p.legend.location = "top_left"
 p.legend.click_policy = "hide"
 
-
+sample_count = 1
 
 
 @gen.coroutine
@@ -115,12 +116,12 @@ def update(update_dict):
     print("UPDATE")
     source.stream(update_dict)
     #print("line 115", update_dict)
-    print("DICT")
+    print("STREAM")
 
 
 # create a callback that will update the samples
 def thread_function():
-
+    global sample_count
     while True:
         time.sleep(1.)
 
@@ -128,43 +129,50 @@ def thread_function():
 
         #sample, timestamp = inlet.pull_sample()
         #sample, timestamp = inlet.do_pull_chunk()
-        sample, timestamp = inlet.pull_chunk(timeout=update_intervall * 1.2, max_samples=int(sampling_frequency * update_intervall))
+        sample, timestamp = inlet.pull_chunk(timeout=update_intervall * 1.2, max_samples=int(fs * update_intervall))
         #transposing list of lists, to have the correct order for the samples
         chunk = list(map(list, zip(*sample)))
 
         #finally saving timestamps in the dict
-        update_dict = dict(x=timestamp)
         #print("line 135", update_dict)
+        update_dict = dict(x=timestamp)
 
         #going through the samples and save them to the responding y-value/channel
-        #for count in range(len(chunk)):
-         #   samples = chunk[count]
-          #  for c in range(len(samples)):
-           #     samples[c] = [samples[c] + count]
-            #print("samples[count]:", samples[count])
+        #patches = dict()
+        #s = slice(3*fs)
+
         for ch_index in range(len(chunk)):
+            #print("sample count:", sample_count)
+
             for s_index in range(len(chunk[ch_index])):
+                #print("sample_index:", s_index)
+                #sleep(3)
+                #sample_count = sample_count + 1
+                #print("update sample count:", sample_count)
+                #sleep(5)
+                #if sample_count == (7*fs):
+                    #print("update sample count:", sample_count)
+                    #print("sample_count mod 300:", sample_count % (3*fs))
+                    #sample_count = 1
+                    #sleep(2)
+                    #patches['x'] = [slice(300), timestamp]
+                    #patches['y%d' % ch_index] = [slice(300), chunk[ch_index]]
+                    #source.patch(patches)
+                    #update_dict.update(patches)
+                    #sleep(30)
+
+                #else:
+                    #print("Hallo BIN IM ELSE")
                 chunk[ch_index][s_index] = chunk[ch_index][s_index] + ch_index - 0.5
+                update_dict['y%d' % ch_index] = chunk[ch_index]
+                    #sleep(10)
 
-            #print("chunk[ch_index]", chunk[ch_index])
-            #new_chunk = [x+count for x in samples]
-           # print("chunk[count]:", chunk[count])
-            #print("samples: ", samples)
-            update_dict['y%d' % ch_index] = chunk[ch_index]
-            #update_dict['y%d' % count] = new_chunk[count]
 
-            #print("line 140", update_dict)
 
-            #print(update_dict)
-            #print(chunk[count])
-        #print(len(sample))
         sleep(update_intervall * 0.95)
-        #for count in reversed(range(num_channels)):
-        #    update_dict['y%d' % count] = [sample[count] + count]
-        #print(chunk)
 
         # but update the document from callback
-        #doc.add_next_tick_callback(partial(update, update_dict=update_dict))
+
         doc.add_next_tick_callback(partial(update, update_dict=update_dict))
 
 
