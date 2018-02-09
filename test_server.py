@@ -40,7 +40,7 @@ inlet = StreamInlet(streams[0])
 # get number of channels
 num_channels = inlet.channel_count
 
-update_intervall = 0.5 #seconds
+# update_intervall = 0.5 #seconds
 fs = inlet.info().nominal_srate()
 #print(update_intervall, sampling_frequency)
 
@@ -63,9 +63,9 @@ p.ygrid.bounds = (0, num_channels)
 
 num_ticker = range(num_channels)
 
-#p.yaxis.ticker = FixedTicker(ticks= list(num_ticker))
+p.yaxis.ticker = FixedTicker(ticks= list(num_ticker))
 
-p.yaxis.ticker = list(num_ticker)
+#p.yaxis.ticker = list(num_ticker)
 
 #p.yaxis.ticker = FixedTicker(ticks=range(num_channels))
 
@@ -85,10 +85,10 @@ p.yaxis.minor_tick_line_color = None
 #    source = ColumnDataSource(data=dict(x=[], y=[]))
 #    p.line(x='x', y='y', source=source, line_width=2, legend='name', alpha=1.)
 
-
-data_dict = dict(x=[])
+source_max_len = 1000 + 1 # +1 for the trailing NaN element!
+data_dict = dict(x=np.zeros(source_max_len))
 for index in range(num_channels):
-    data_dict['y%d' % index] = []
+    data_dict['y%d' % index] = np.ones(source_max_len) * np.NaN
     #print("line90:", data_dict)
 
 
@@ -114,7 +114,9 @@ sample_count = 1
 def update(update_dict):
     #print("line 112:",update_dict)
     print("UPDATE")
-    source.stream(update_dict)
+    #source.stream(update_dict)
+    source.patch(update_dict)
+
     #print("line 115", update_dict)
     print("STREAM")
 
@@ -122,24 +124,41 @@ def update(update_dict):
 # create a callback that will update the samples
 def thread_function():
     global sample_count
-    while True:
-        time.sleep(1.)
+    max_val = 0
+    updates_per_second = 5
+    patch_size = int(fs / updates_per_second)
+    patch_index = 0
 
+    first_execute = True
+
+    while True:
         # BEST PRACTICE --- update .data in one step with a new dict
 
-        #sample, timestamp = inlet.pull_sample()
-        #sample, timestamp = inlet.do_pull_chunk()
-        sample, timestamp = inlet.pull_chunk(timeout=update_intervall * 1.2, max_samples=int(fs * update_intervall))
+        wait_time = patch_size / fs
+        sample, timestamp = inlet.pull_chunk(timeout=wait_time * 1.2, max_samples=patch_size)
+
+        if patch_index == 0:
+            t_offset = timestamp[0]
+
+        #
+        if patch_index == 0:
+            x_slice = slice(None, patch_index + patch_size)
+            y_slice = slice(None, patch_index + patch_size)  # +1) # +1 for the trailing NaN element
+        else:
+            x_slice = slice(patch_index, patch_index+patch_size)
+            y_slice = slice(patch_index, patch_index+patch_size)#+1) # +1 for the trailing NaN element
+
         #transposing list of lists, to have the correct order for the samples
         chunk = list(map(list, zip(*sample)))
 
         #finally saving timestamps in the dict
-        #print("line 135", update_dict)
-        update_dict = dict(x=timestamp)
+        t = [timestamp[s] - t_offset for s in range(len(timestamp))]
+        update_dict = dict(x=[(x_slice, t)])
+
+        patches_dict = dict()
+        #s = slice(3*fs)
 
         #going through the samples and save them to the responding y-value/channel
-        #patches = dict()
-        #s = slice(3*fs)
 
         for ch_index in range(len(chunk)):
             #print("sample count:", sample_count)
@@ -147,35 +166,37 @@ def thread_function():
             for s_index in range(len(chunk[ch_index])):
                 #print("sample_index:", s_index)
                 #sleep(3)
-                #sample_count = sample_count + 1
+                sample_count = sample_count + 1
                 #print("update sample count:", sample_count)
                 #sleep(5)
                 #if sample_count == (7*fs):
-                    #print("update sample count:", sample_count)
-                    #print("sample_count mod 300:", sample_count % (3*fs))
-                    #sample_count = 1
-                    #sleep(2)
-                    #patches['x'] = [slice(300), timestamp]
-                    #patches['y%d' % ch_index] = [slice(300), chunk[ch_index]]
-                    #source.patch(patches)
-                    #update_dict.update(patches)
-                    #sleep(30)
 
-                #else:
-                    #print("Hallo BIN IM ELSE")
-                chunk[ch_index][s_index] = chunk[ch_index][s_index] + ch_index - 0.5
-                update_dict['y%d' % ch_index] = chunk[ch_index]
+                if first_execute:
+                    val = chunk[ch_index][s_index]
+                    if abs(val) > max_val:
+                        max_val = abs(val)
+
+
+
+
+
+                chunk[ch_index][s_index] = chunk[ch_index][s_index]/max_val + ch_index - 0.5
+
+            #todo: add a nan element after the chunk!!
+            # chunk[ch_index].append(np.NaN)
+            update_dict['y%d' % ch_index] = [(y_slice, chunk[ch_index])]
                     #sleep(10)
 
-
-
-        sleep(update_intervall * 0.95)
+        #todo: is this needed?
+        sleep(wait_time * 0.5)
 
         # but update the document from callback
-
         doc.add_next_tick_callback(partial(update, update_dict=update_dict))
+        first_execute = False
 
-
+        patch_index = patch_index + patch_size
+        if patch_index + patch_size >= source_max_len + 1:
+            patch_index = 0
 
 
 thread = Thread(target=thread_function)

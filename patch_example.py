@@ -17,12 +17,12 @@ new_data_dict = dict(x=[1,2,3,4], y=[5,6,7,8])
 print('new_data_dict:  ', new_data_dict)
 
 
-#new_data_dict.update(data_dict)
+new_data_dict.update(data_dict)
 #print('update', new_data_dict)
 
 
 
-source.patch({ 'x' : [(slice(1), new_data_dict['x'])], 'y' : [(slice(1), new_data_dict['y'])] })
+source.patch({ 'x' : [(slice(len(new)), new_data_dict['x'])], 'y' : [(slice(1), new_data_dict['y'])] })
 
 print(data_dict)
 
